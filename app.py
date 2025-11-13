@@ -3,9 +3,21 @@ import streamlit as st
 import pandas as pd
 import json
 
-st.set_page_config(page_title="SASU Tracker V12 @Grillon_", layout="wide", page_icon="📅")
-st.title("SASU Tracker V12 - @Grillon_")
+st.set_page_config(page_title="SASU Tracker V12.2 @Grillon_", layout="wide", page_icon="")
+st.title("SASU Tracker V12.2 - @Grillon_")
 st.caption("Tu choisis tes mois | Conges provisionnes | Tresor reel | IS Reel")
+
+def safe_float(val, default=0.0):
+    try:
+        return float(val)
+    except (TypeError, ValueError):
+        return default
+
+def safe_int(val, default=0):
+    try:
+        return int(val)
+    except (TypeError, ValueError):
+        return default
 
 # Initialiser les clés session_state si absentes
 if "depenses" not in st.session_state:
@@ -18,13 +30,17 @@ if "depenses" not in st.session_state:
 if "mois_travailles" not in st.session_state:
     st.session_state.mois_travailles = 10
 if "ca_mensuel" not in st.session_state:
-    st.session_state.ca_mensuel = 10000
+    st.session_state.ca_mensuel = 10000.0
 if "salaire_brut" not in st.session_state:
-    st.session_state.salaire_brut = 3200
+    st.session_state.salaire_brut = 3200.0
 if "dividendes" not in st.session_state:
-    st.session_state.dividendes = 0
+    st.session_state.dividendes = 0.0
 if "mois_conges_payes" not in st.session_state:
     st.session_state.mois_conges_payes = 2
+
+# Flag pour contrôler import JSON unique par session
+if "json_import_done" not in st.session_state:
+    st.session_state.json_import_done = False
 
 # === 1. Mois travaillés ===
 st.subheader("1. Combien de mois tu travailles ?")
@@ -33,32 +49,33 @@ st.session_state.mois_travailles = st.slider(
 
 # === 2. CA mensuel ===
 st.subheader("2. Combien tu gagnes par mois travaille ?")
+st.session_state.ca_mensuel = float(st.session_state.ca_mensuel)
 st.session_state.ca_mensuel = st.number_input(
-    "CA HT par mois travaille (EUR)", min_value=5000, max_value=20000,
-    value=st.session_state.ca_mensuel, step=500)
+    "CA HT par mois travaille (EUR)", min_value=5000.0, max_value=20000.0,
+    value=st.session_state.ca_mensuel, step=500.0)
 
 # === 3. Salaire & dividendes ===
 st.subheader("3. Combien tu te payes ?")
 col_s1, col_s2 = st.columns(2)
 with col_s1:
-    st.session_state.salaire_brut = st.slider(
-        "Salaire brut mensuel (EUR)", 0, 10000, st.session_state.salaire_brut, 100)
+    st.session_state.salaire_brut = st.number_input(
+        "Salaire brut mensuel (EUR)", min_value=0.0, max_value=10000.0, value=st.session_state.salaire_brut, step=100.0)
 with col_s2:
     st.session_state.dividendes = st.number_input(
-        "Dividendes annuels (EUR)", 0, 100000, st.session_state.dividendes, 1000)
+        "Dividendes annuels (EUR)", min_value=0.0, max_value=100000.0, value=st.session_state.dividendes, step=1000.0)
 
 # === 4. Dépenses ===
 st.subheader("4. Combien tu dépenses ?")
 
 def add_depense():
-    st.session_state.depenses.append({"nom": "", "montant": 0, "pct": 100, "pro": True})
+    st.session_state.depenses.append({"nom": "", "montant": 0.0, "pct": 100, "pro": True})
     st.rerun()
 
 # Import JSON complet
 st.divider()
 st.markdown("#### Importer un état complet (JSON)")
 uploaded_file = st.file_uploader("Importer un fichier JSON complet", type=["json"])
-if uploaded_file is not None:
+if uploaded_file is not None and not st.session_state.json_import_done:
     try:
         data = json.load(uploaded_file)
         if isinstance(data, dict):
@@ -68,22 +85,23 @@ if uploaded_file is not None:
                 for dep in data["depenses"]:
                     dep_clean = {
                         "nom": dep.get("nom", ""),
-                        "montant": float(dep.get("montant", 0)),
-                        "pct": int(dep.get("pct", 100)),
+                        "montant": safe_float(dep.get("montant", 0)),
+                        "pct": safe_int(dep.get("pct", 100)),
                         "pro": bool(dep.get("pro", True)),
                     }
                     st.session_state.depenses.append(dep_clean)
-            # Variables globales
+            # Variables globales avec conversions sécurisées
             if "mois_travailles" in data:
-                st.session_state.mois_travailles = int(data["mois_travailles"])
+                st.session_state.mois_travailles = safe_int(data.get("mois_travailles", 10))
             if "ca_mensuel" in data:
-                st.session_state.ca_mensuel = float(data["ca_mensuel"])
+                st.session_state.ca_mensuel = safe_float(data.get("ca_mensuel", 10000.0))
             if "salaire_brut" in data:
-                st.session_state.salaire_brut = float(data["salaire_brut"])
+                st.session_state.salaire_brut = safe_float(data.get("salaire_brut", 3200.0))
             if "dividendes" in data:
-                st.session_state.dividendes = float(data["dividendes"])
+                st.session_state.dividendes = safe_float(data.get("dividendes", 0.0))
             if "mois_conges_payes" in data:
-                st.session_state.mois_conges_payes = int(data["mois_conges_payes"])
+                st.session_state.mois_conges_payes = safe_int(data.get("mois_conges_payes", 2))
+            st.session_state.json_import_done = True
             st.success("Import complet réussi avec normalisation.")
             st.rerun()
         else:
@@ -98,7 +116,7 @@ if st.button("Ajouter une dépense", key="btn_add_depense"):
 depenses_list = []
 for i, dep in enumerate(st.session_state.depenses):
     nom = dep.get("nom", "")
-    montant = dep.get("montant", 0)
+    montant = dep.get("montant", 0.0)
     pct = dep.get("pct", 100)
     pro = dep.get("pro", True)
 
@@ -106,7 +124,8 @@ for i, dep in enumerate(st.session_state.depenses):
     with col1:
         nom = st.text_input("Nom", value=nom, key=f"dep_nom_{i}")
     with col2:
-        montant = st.number_input("Montant (EUR)", 0, 10000, montant, key=f"dep_montant_{i}")
+        montant = float(montant)
+        montant = st.number_input("Montant (EUR)", 0.0, 10000.0, montant, key=f"dep_montant_{i}")
     with col3:
         pct = st.slider("% deduc.", 0, 100, pct, 5, key=f"dep_pct_{i}")
     with col4:
@@ -150,7 +169,6 @@ salaire_net_mensuel = st.session_state.salaire_brut - charges_sociales_mensuel
 # Congés payés
 st.subheader("5. Combien de mois de congés payés ?")
 
-# Le widget selectbox utilise la clé 'mois_conges_payes' et ne doit pas réassigner la session_state
 default_index = 0
 if st.session_state.mois_conges_payes in [1, 2]:
     default_index = [1, 2].index(st.session_state.mois_conges_payes)
@@ -166,8 +184,8 @@ provision_conges_mensuel = round(st.session_state.salaire_brut * pct_conges, 0)
 charges_conges_mensuel = round(provision_conges_mensuel * 0.39, 0)
 
 st.markdown(f"""
-**Tu prends {mois_conges_payes} mois de congés → tu provisionnes {int(pct_conges*100)} % du brut**  
-**Provision mensuelle** : `{provision_conges_mensuel:,.0f} EUR`  
+**Tu prends {mois_conges_payes} mois de congés → tu provisionnes {int(pct_conges*100)} % du brut**    
+**Provision mensuelle** : `{provision_conges_mensuel:,.0f} EUR`    
 **Charges sociales** : `{charges_conges_mensuel:,.0f} EUR`
 """)
 
@@ -186,17 +204,17 @@ cash_perso_annuel = cash_perso_mensuel * st.session_state.mois_travailles + st.s
 st.divider()
 st.subheader("Ce qui se passe chaque mois travaille")
 st.markdown(f"""
-**Tu gagnes** : `{st.session_state.ca_mensuel:,.0f} EUR`  
-**Tu payes à la société** : `{depenses_pro_mensuel:,.0f} EUR`  
-**Tu payes toi-même** : `{depenses_perso_mensuel:,.0f} EUR`  
+**Tu gagnes** : `{st.session_state.ca_mensuel:,.0f} EUR`    
+**La société depense** : `{depenses_pro_mensuel:,.0f} EUR`    
+**Tu payes toi-même** : `{depenses_perso_mensuel:,.0f} EUR`    
 **Tu te payes** : `{st.session_state.salaire_brut:,.0f} EUR` (brut) → **{salaire_net_mensuel:,.0f} EUR** (net)
 
 **Tu provisionnes pour tes congés** : `{provision_conges_mensuel:,.0f} EUR` (+ {charges_conges_mensuel:,.0f} EUR charges)
 
-**Argent qui reste dans la SASU (avant IS)** :  
+**Argent qui reste dans la SASU (avant IS)** :    
 `{st.session_state.ca_mensuel:,.0f} - {depenses_pro_mensuel:,.0f} - ({st.session_state.salaire_brut:,.0f} + {provision_conges_mensuel:,.0f}) = **{reste_sasu_mensuel:,.0f} EUR**`
 
-**Argent en poche (toi)** :  
+**Argent en poche (toi)** :    
 `{salaire_net_mensuel:,.0f} - {depenses_perso_mensuel:,.0f} = **{cash_perso_mensuel:,.0f} EUR**`
 """)
 
